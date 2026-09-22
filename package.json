@@ -1,7 +1,8 @@
 {
-  "name": "shresth-bday-system",
+  "name": "birthday-diaries",
   "version": "1.0.0",
+  "private": true,
   "dependencies": {
-    "@supabase/supabase-js": "^2.39.0"
+    "@supabase/supabase-js": "^2.45.0"
   }
 }

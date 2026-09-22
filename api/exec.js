@@ -6,57 +6,43 @@ const supabase = createClient(
 );
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).json({ error: 'Method Not Allowed' });
+  if (req.method !== 'POST') {
+    return res.status(405).json({ output: null });
+  }
 
-  const { command, rawInput } = req.body;
-  const clientIp = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+  const { command, rawInput } = req.body || {};
+  if (!command) return res.status(400).json({ output: null });
 
-  // 1. Log command into PostgreSQL database
   try {
-    await supabase.from('audit_logs').insert([
-      { command: rawInput, ip_address: clientIp }
-    ]);
+    if (command === 'ping') {
+      return res.status(200).json({ output: 'pong. backend is live, not just decoration.' });
+    }
+
+    if (command === 'reply') {
+      const message = (rawInput || '').replace(/^reply\s+/i, '').replace(/^"|"$/g, '').trim();
+      if (!message) {
+        return res.status(200).json({ output: 'usage: reply "your message here"' });
+      }
+      const { error } = await supabase.from('replies').insert({ message });
+      if (error) throw error;
+      return res.status(200).json({ output: 'sent. — logged, not lost.' });
+    }
+
+    if (command === 'cat') {
+      const key = (rawInput || '').split(/\s+/)[1];
+      if (key) {
+        const { data } = await supabase
+          .from('content')
+          .select('value')
+          .eq('key', key)
+          .single();
+        if (data) return res.status(200).json({ output: data.value });
+      }
+      return res.status(200).json({ output: null });
+    }
+
+    return res.status(200).json({ output: null });
   } catch (err) {
-    console.error("DB Log Error:", err);
+    return res.status(200).json({ output: null });
   }
-
-  // 2. Handle Backend-Driven Commands
-  const lower = command.toLowerCase();
-  const parts = rawInput.trim().split(/\s+/);
-
-  if (lower === 'ping') {
-    return res.status(200).json({
-      output: [
-        'PING api.shresth22.internal (127.0.0.1): 56 data bytes',
-        '64 bytes from 127.0.0.1: icmp_seq=0 ttl=64 time=0.42 ms',
-        '64 bytes from 127.0.0.1: icmp_seq=1 ttl=64 time=0.38 ms',
-        '--- api.shresth22.internal ping statistics ---',
-        '2 packets transmitted, 2 packets received, 0.0% packet loss'
-      ].join('\n')
-    });
-  }
-
-  if (lower === 'audit') {
-    const { data: logs } = await supabase
-      .from('audit_logs')
-      .select('command, created_at')
-      .order('created_at', { ascending: false })
-      .limit(5);
-
-    const lines = (logs || []).map(l => `[${l.created_at.slice(11,19)}] ${l.command}`);
-    return res.status(200).json({ output: ['[RECENT SERVER AUDIT TRAIL]', ...lines].join('\n') });
-  }
-
-  if (parts[0].toLowerCase() === 'cat' && parts[1] === 'secret_2026.txt') {
-    const { data } = await supabase
-      .from('server_files')
-      .select('content')
-      .eq('filename', 'secret_2026.txt')
-      .single();
-
-    return res.status(200).json({ output: data ? data.content : 'file not found' });
-  }
-
-  // Fallback: Let frontend handle standard static commands (whoami, log, neofetch, etc.)
-  return res.status(200).json({ passThrough: true });
 }
